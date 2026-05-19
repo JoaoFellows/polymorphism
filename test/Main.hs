@@ -4,9 +4,13 @@ import Test.HUnit
 import Control.Monad.State (evalStateT)
 import AST
 import TypeChecker
+import TypeCheckerF
 
 run :: Expr -> Either String Type
 run e = evalStateT (checker e) 0
+
+runF :: Expr -> Either String Type
+runF = checkerF
 
 -- Bool literals
 testTrue :: Test
@@ -152,18 +156,21 @@ testAppArgMismatch = TestCase $
     Right t -> assertFailure ("expected type error, got " ++ show t)
 
 -- Let-polymorphism (well-typed)
+-- Let-polymorphic id used at Bool.
 testLetIdentityBool :: Test
 testLetIdentityBool = TestCase $
   assertEqual "let id = \\x:a. x in id true : Bool"
     (Right TBool)
     (run (Let "id" (Abs ("x", TVar "a") (Var "x")) (App (Var "id") ETrue)))
 
+-- Let-polymorphic id used at Nat.
 testLetIdentityNat :: Test
 testLetIdentityNat = TestCase $
   assertEqual "let id = \\x:a. x in id 0 : Nat"
     (Right TNat)
     (run (Let "id" (Abs ("x", TVar "a") (Var "x")) (App (Var "id") Zero)))
 
+-- Let-polymorphic id reused at different types.
 testLetPolyReuse :: Test
 testLetPolyReuse = TestCase $
   assertEqual "let id = \\x:a. x in if (id true) then (id 0) else 0 : Nat"
@@ -175,12 +182,35 @@ testLetPolyReuse = TestCase $
                Zero)))
 
 -- Lambda-bound variables do not generalize (ill-typed)
+-- Lambda-bound id should stay monomorphic.
 testNoGeneralizationInAbs :: Test
 testNoGeneralizationInAbs = TestCase $
   case run (Abs ("id", TVar "a" `TArrow` TVar "a")
               (If (App (Var "id") ETrue)
                   (App (Var "id") Zero)
                   Zero)) of
+    Left _  -> return ()
+    Right t -> assertFailure ("expected type error, got " ++ show t)
+
+-- System F (explicit polymorphism)
+-- System F identity type abstraction.
+testFTypeAbsId :: Test
+testFTypeAbsId = TestCase $
+  assertEqual "TypeAbs id : forall a. a -> a"
+    (Right (TForall "a" (TVar "a" `TArrow` TVar "a")))
+    (runF (TypeAbs "a" (Abs ("x", TVar "a") (Var "x"))))
+
+-- System F type application at Bool.
+testFTypeAppBool :: Test
+testFTypeAppBool = TestCase $
+  assertEqual "(TypeAbs id) [Bool] true : Bool"
+    (Right TBool)
+    (runF (App (TypeApp (TypeAbs "a" (Abs ("x", TVar "a") (Var "x"))) TBool) ETrue))
+
+-- System F rejects type app on non-forall.
+testFTypeAppNotForall :: Test
+testFTypeAppNotForall = TestCase $
+  case runF (TypeApp (Abs ("x", TBool) (Var "x")) TBool) of
     Left _  -> return ()
     Right t -> assertFailure ("expected type error, got " ++ show t)
 
@@ -216,6 +246,9 @@ tests = TestList
   , TestLabel "Let id Nat"           testLetIdentityNat
   , TestLabel "Let id reuse"         testLetPolyReuse
   , TestLabel "No gen in Abs"        testNoGeneralizationInAbs
+  , TestLabel "F type abs id"        testFTypeAbsId
+  , TestLabel "F type app Bool"      testFTypeAppBool
+  , TestLabel "F type app err"       testFTypeAppNotForall
   ]
 
 main :: IO ()

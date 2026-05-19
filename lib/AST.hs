@@ -12,6 +12,8 @@ data Expr = ETrue
           | Var Name                  -- x               vars in Lambda Calculus
           | Abs (Name, Type) Expr     -- (\x:T . expr)   abstraction in Lambda Calculus
           | App Expr Expr             -- t1 t2           application in Lambda Calculus
+          | TypeAbs Name Expr         -- /\a. expr       type abstraction (System F)
+          | TypeApp Expr Type         -- expr [T]        type application (System F)
           | Let Name Expr Expr        -- let x = e1 in e2
      deriving (Eq, Show)
 
@@ -25,6 +27,7 @@ data Value = VTrue
 data Type = TBool
           | TNat
           | TVar Name
+          | TForall Name Type
           | Type `TArrow` Type
      deriving (Eq, Show)
 

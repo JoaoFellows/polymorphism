@@ -32,6 +32,9 @@ applyType s t = case t of
   TVar n -> case lookup n s of
     Just t' -> t'
     Nothing -> TVar n
+  TForall a t1 ->
+    let s' = filter (\(n, _) -> n /= a) s
+    in TForall a (applyType s' t1)
   t1 `TArrow` t2 -> applyType s t1 `TArrow` applyType s t2
 
 -- Do not substitute quantified variables in a scheme.
@@ -50,6 +53,7 @@ ftvType t = case t of
   TBool -> []
   TNat -> []
   TVar n -> [n]
+  TForall a t1 -> ftvType t1 \\ [a]
   t1 `TArrow` t2 -> nub (ftvType t1 ++ ftvType t2)
 
 -- Free type variables of a scheme (excluding quantified vars).
@@ -92,6 +96,8 @@ unify :: Type -> Type -> Res Subst
 unify t1 t2 = case (t1, t2) of
   (TBool, TBool) -> return nullSubst
   (TNat, TNat) -> return nullSubst
+  (TForall _ _, _) -> throwError "forall types are not supported by HM unification"
+  (_, TForall _ _) -> throwError "forall types are not supported by HM unification"
   (TVar u, t) -> bindVar u t
   (t, TVar u) -> bindVar u t
   (t11 `TArrow` t12, t21 `TArrow` t22) -> do
@@ -156,6 +162,12 @@ infer env expr = case expr of
     s3 <- unify (applyType s2 t1) (t2 `TArrow` tv)
     let s = s3 `composeSubst` s2 `composeSubst` s1
     return (s, applyType s tv)
+
+  TypeAbs _ _ ->
+    throwError "type abstraction is not supported by the HM checker"
+
+  TypeApp _ _ ->
+    throwError "type application is not supported by the HM checker"
 
   Let x e1 e2 -> do
     (s1, t1) <- infer env e1
