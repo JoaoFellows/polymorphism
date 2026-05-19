@@ -6,7 +6,7 @@ import AST
 import TypeChecker
 
 run :: Expr -> Either String Type
-run e = evalStateT (checker e) []
+run e = evalStateT (checker e) 0
 
 -- Bool literals
 testTrue :: Test
@@ -151,6 +151,39 @@ testAppArgMismatch = TestCase $
     Left _  -> return ()
     Right t -> assertFailure ("expected type error, got " ++ show t)
 
+-- Let-polymorphism (well-typed)
+testLetIdentityBool :: Test
+testLetIdentityBool = TestCase $
+  assertEqual "let id = \\x:a. x in id true : Bool"
+    (Right TBool)
+    (run (Let "id" (Abs ("x", TVar "a") (Var "x")) (App (Var "id") ETrue)))
+
+testLetIdentityNat :: Test
+testLetIdentityNat = TestCase $
+  assertEqual "let id = \\x:a. x in id 0 : Nat"
+    (Right TNat)
+    (run (Let "id" (Abs ("x", TVar "a") (Var "x")) (App (Var "id") Zero)))
+
+testLetPolyReuse :: Test
+testLetPolyReuse = TestCase $
+  assertEqual "let id = \\x:a. x in if (id true) then (id 0) else 0 : Nat"
+    (Right TNat)
+    (run (Let "id"
+           (Abs ("x", TVar "a") (Var "x"))
+           (If (App (Var "id") ETrue)
+               (App (Var "id") Zero)
+               Zero)))
+
+-- Lambda-bound variables do not generalize (ill-typed)
+testNoGeneralizationInAbs :: Test
+testNoGeneralizationInAbs = TestCase $
+  case run (Abs ("id", TVar "a" `TArrow` TVar "a")
+              (If (App (Var "id") ETrue)
+                  (App (Var "id") Zero)
+                  Zero)) of
+    Left _  -> return ()
+    Right t -> assertFailure ("expected type error, got " ++ show t)
+
 tests :: Test
 tests = TestList
   [ TestLabel "ETrue"                testTrue
@@ -179,6 +212,10 @@ tests = TestList
   , TestLabel "App returns Bool"     testAppReturnsBool
   , TestLabel "App not a function"   testAppNotAFunction
   , TestLabel "App arg mismatch"     testAppArgMismatch
+  , TestLabel "Let id Bool"          testLetIdentityBool
+  , TestLabel "Let id Nat"           testLetIdentityNat
+  , TestLabel "Let id reuse"         testLetPolyReuse
+  , TestLabel "No gen in Abs"        testNoGeneralizationInAbs
   ]
 
 main :: IO ()
